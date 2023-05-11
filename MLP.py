@@ -1,0 +1,156 @@
+# -*- coding: utf-8 -*-
+
+"""
+
+Created on Mon Oct 10 21:02:08 2022
+
+
+
+@author: chongloc
+
+"""
+
+
+
+import tensorflow as tf
+
+from tensorflow.keras import layers, models, optimizers
+
+import numpy as np
+
+
+
+class MLP_net():
+
+    def __init__(self,params):
+
+        super(MLP_net, self).__init__()
+
+        tf.compat.v1.disable_eager_execution()
+
+        tf.compat.v1.config.set_soft_device_placement(True)
+
+        self.params=params
+
+          
+
+    def build_net(self,inlr):
+
+        self.inlr = inlr
+
+        # Input
+
+        self.s = layers.Input(shape=self.params['s_input_shape'], name='s_input')
+
+        self.c = layers.Input(shape=self.params['c_input_shape'], name='c_input')
+
+        self.i = layers.Input(shape=self.params['i_input_shape'], name='i_input')
+
+        self.o = layers.Input(shape=self.params['o_input_shape'], name='o_output')
+
+
+
+        # S net
+
+        s_prev0 = self.s
+
+        for i in np.arange(self.params['snet_layer']):
+
+            s_prev0 = layers.Dense(self.params['s_net'][i]['num'], activation='tanh', name='snet_' + str(i))(s_prev0)
+
+        s_prev0 = layers.Dense(100, activation='tanh', name='soutput')(s_prev0)
+
+
+
+        # C net
+
+        c_prev0 = self.c
+
+        for i in np.arange(self.params['cnet_layer']):
+
+            c_prev0 = layers.Dense(self.params['c_net'][i]['num'], activation='tanh', name='cnet_' + str(i))(c_prev0)
+
+        c_prev0 = layers.Dense(100, activation='tanh', name='coutput')(c_prev0)
+
+
+
+        # I net
+
+        i_prev=self.i
+
+        for i in np.arange(self.params['inet_layer']):
+
+            F_prev=layers.Dense(self.params['i_net'][i]['num'], activation='tanh', name='inet_'+str(i))(i_prev)
+
+        i_prev=layers.Dense(100, activation='tanh',name='ioutput')(i_prev)
+
+
+
+        # Combine
+
+        self.csci = layers.concatenate([s_prev0, c_prev0, i_prev], name='Combine')
+
+        #encoding layers
+
+        normal_initializer = tf.random_normal_initializer()
+
+        prev_layeru = self.csci
+
+        for i in np.arange(self.params['Encoding_layer']):
+
+            prev_layeru = layers.Dense(self.params['Encoding_param'][i]['num'], activation='tanh', name='Encoding_'+str(i))(prev_layeru)
+
+
+
+        def output_layers(prev_layeru,outid):
+
+            Uoutput = prev_layeru
+
+            for i in np.arange(self.params['Output_layer']):
+
+                Uoutput = layers.Dense(self.params['Output_param'][i]['num'], activation='tanh',
+
+                                             name='Out_'+outid+'_' + str(i))(Uoutput)
+
+            return Uoutput
+
+
+
+        # Output1
+
+        self.output = output_layers(prev_layeru,'1')
+
+
+        self.model = models.Model(inputs=[self.s, self.c, self.i, self.o],outputs=[self.output])
+
+        adam = optimizers.Adam(lr=inlr)
+
+        self.model.compile(optimizer=adam, loss=['mse'])
+
+        #self.model.summary()
+
+
+
+    def train(self,strain,ctrain,itrain,otrain,otrain_out,step,reduce_lr):
+
+        history=self.model.fit(x=[strain,ctrain,itrain,otrain], y=[otrain_out],epochs=step,verbose=0,callbacks=[reduce_lr])
+
+        return history
+
+
+
+    def initialize(self):
+
+        config = self.model.get_config()
+
+        init_model = models.Model.from_config(config)
+
+        adam = optimizers.Adam(lr=self.inlr)
+
+        init_model.compile(optimizer=adam, loss=['mse', 'mse'])
+
+        return init_model
+
+        
+
+        
